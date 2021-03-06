@@ -1,0 +1,2 @@
+CODA_PRIVKEY_PASS="private key password"
+EXTRA_FLAGS=" --generate-genesis-proof true --peer-list-url https://storage.googleapis.com/seed-lists/<codename>_seeds.txt --file-log-level Info --block-producer-key <PATH/TO/PRIVATE_KEY_FILE> ORRRR... --block-producer-pubkey <PUBLICKEY> --coinbase-receiver <ANY_PUBLICKEY> --run-snark-worker <ANY_PUBLICKEY> --snark-worker-fee <FEE> --snark-worker-parallelism <NUM THREADS> --work-selection <seq|rand>"
