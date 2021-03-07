@@ -135,3 +135,51 @@ Test with `ping`:
 
 `ufw status numbered` (lists by number)
 `ufw delete <rule number>`
+
+### systemd daemon stuff
+
+User-created daemon processes are saved in `/usr/lib/systemd/user/<service-name>.service`.
+
+Make sure to `cat` that file to see what the startup command is!
+
+You might need to remove things / edit the daemon startup command, every time you download new versions.
+
+E.g.:
+
+Remove `-peer-list-file %h/peers.txt \`
+
+### Creating your own daemon:
+
+```
+systemctl --user daemon-reload
+systemctl --user start <name>
+systemctl --user enable <name>
+sudo loginctl enable-linger
+```
+^^^These commands will allow the node to continue running after you logout, and restart automatically when the machine reboots.
+
+`systemctl --user status <name>` This command will let you know if mina had any trouble getting started.
+
+`systemctl --user stop <name>` to stop mina gracefully, and to stop automatically-restarting the service.
+
+`systemctl --user restart <name>` to manually restart it.
+
+`journalctl --user -u <name> -n 1000 -f` to look at logs.
+
+### Installing node and npm and stuff
+
+Install nvm: `wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh | bash` (see this link for updated download method: https://github.com/nvm-sh/nvm#install--update-script)
+
+`nvm install --lts`
+
+And now we nave Node.js!
+
+`npm` command will show you where global binaries get stored (so that you can point daemons to them, for example)
+
+E.g. `npm@6.14.11 /home/mike/.nvm/versions/node/v14.16.0/lib/node_modules/npm`
+
+Since nvm stores the `node` binary in a weird place, ubuntu might sometimes get confused and look in the more standard location of `/usr/bin/`.
+Your computer should understand the `node` command by now. So let's create a symlink from `node` to `/usr/local/bin`:
+
+`sudo ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/node" "/usr/local/bin/node"`
+`sudo ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/npm" "/usr/local/bin/npm"`
