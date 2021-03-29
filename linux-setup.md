@@ -130,6 +130,9 @@ Test with `ping`:
 
 `ping 172.16.5.204` should error.
 
+Docker access to local machine:
+`sudo ufw allow in on docker0 from 172.17.0.0/16 to 172.17.0.0/16`
+
 
 #### To undo firewall steps:
 
@@ -166,6 +169,11 @@ sudo loginctl enable-linger
 
 `journalctl --user -u <name> -n 1000 -f` to look at logs.
 
+### Managing journalctl log size
+
+`sudo nano /etc/systemd/journald.conf`  
+Set `SystemMaxUse=500M`
+
 ### Installing node and npm and stuff
 
 Install nvm: `wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh | bash` (see this link for updated download method: https://github.com/nvm-sh/nvm#install--update-script)
@@ -183,3 +191,159 @@ Your computer should understand the `node` command by now. So let's create a sym
 
 `sudo ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/node" "/usr/local/bin/node"`
 `sudo ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/npm" "/usr/local/bin/npm"`
+
+# MINA
+
+### daemon:
+- Gets automatically installed (upon apk install) at `/usr/lib/systemd/user/mina.service`
+- Needs a bit of tweaking after EVERY download: `sudo nano /usr/lib/systemd/user/mina.service`
+- ```
+  [Unit]
+  Description=Mina Daemon Service
+  After=network.target
+  StartLimitIntervalSec=60
+  StartLimitBurst=3
+
+  [Service]
+  EnvironmentFile=%h/.mina-env
+  Type=simple
+  Restart=always
+  RestartSec=15
+  ExecStart=/usr/local/bin/mina daemon \
+    -block-producer-key %h/keys/my-wallet \
+    -generate-genesis-proof true \
+    -log-level Info \
+    $EXTRA_FLAGS
+  ExecStop=/usr/local/bin/mina client stop-daemon
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+*You might need to remove some lines from `ExecStart` above (e.g. the PEER LIST, which will instead be fed-in via the EXTRA_FLAGS specified in ~/.mina-env*
+
+Put these flags in the `~/.mina-env` file (*PEER LIST URL MIGHT BE DIFFERENT*):
+`EXTRA_FLAGS=" --limited-graphql-port 3095 --file-log-level Info --peer-list-url https://storage.googleapis.com/seed-lists/devnet_seeds.txt --coinbase-receiver B62qpA8s9wbazMmXGFENyR952kKgCofTGG6QX584Je55A5QrpqPaahW --snark-worker-fee 10 --snark-worker-parallelism 16 --work-selection seq"`
+
+Note: the snark work address will be set by the wrkr (and the address will be that of the supercharged address (except at the very start when it'll be the hot wallet address))
+
+
+### wrkr
+- Created a `wrkr` daemon in `/usr/lib/systemd/user/wrkr.service`
+- (See commands above for how to start a daemon and enable it to restart)
+- ```
+  [Unit]
+  Description=Mina Snark Worker
+  After=network.target
+  StartLimitIntervalSec=60
+  StartLimitBurst=3
+
+  [Service]
+  Type=simple
+  Restart=always
+  RestartSec=15
+  ExecStart=/home/mike/.nvm/versions/node/v14.16.0/bin/wrkr --pk <insert pk here>
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+### sidecar
+
+IGNORE BELOW - see better sidecar instructions here: https://minaprotocol.com/docs/advanced/node-status
+
+- Created a `mina-sidecar` daemon in `/usr/lib/systemd/user/mina-sidecar.service`
+- (See commands above for how to start a daemon and enable it to restart)
+- ```
+  [Unit]
+  Description=Mina Sidecar
+  After=network.target
+  StartLimitIntervalSec=60
+  StartLimitBurst=3
+
+  [Service]
+  Type=simple
+  Restart=always
+  RestartSec=15
+  ExecStart=/usr/bin/python3 /home/mike/git/mina-bp-stats-sidecar/sidecar.py
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+Alternatively, you can use the Docker package to run the sidecar: https://github.com/Fitblip/mina/blob/ryan/mina-bp-stats/automation/services/mina-bp-stats/sidecar/README.md <--- you can get the python script from here, in order to run as a daemon.
+
+Package at dockerhub: `minaprotocol/mina-bp-stats-sidecar:latest`
+
+MINA_BP_UPLOAD_URL: https://us-central1-mina-mainnet-303900.cloudfunctions.net/block-producer-stats-ingest/?token=72941420a9595e1f4006e2f3565881b5
+
+
+##### Docker sidecar
+
+If you're running a mina node locally (using the mina daemon), but want to run the mina-sidecar as a docker container, you can do:
+
+`docker run --name mina-sidecar -d --network host -v /etc/mina-sidecar.json:/etc/mina-sidecar.json minaprotocol/mina-bp-stats-sidecar:latest`
+
+(the host network being the key thing)
+
+With `.json` at :`/etc/mina-sidecar.json`
+```
+{
+  "uploadURL": "https://us-central1-mina-mainnet-303900.cloudfunctions.net/block-producer-stats-ingest/?token=72941420a9595e1f4006e2f3565881b5",
+  "nodeURL": "http://localhost:3085"
+}
+```
+
+# Mina Block Producer Metrics Sidecar
+
+This is a simple sidecar that communicates with Mina nodes to ship off uptime data for analysis.
+
+Unless you're a founding block producer, you shouldn't need to run this sidecar.
+
+## Configuration
+
+The sidecar takes 2 approaches to configuration, a pair of envars, or a configuration file.
+
+**Note**: Environment variables always take precedence, even if the config file is available and valid.
+
+#### Envars
+- `MINA_BP_UPLOAD_URL` - The URL to upload block producer statistics to
+- `MINA_NODE_URL` - The URL that the sidecar will reach out to to get statistics from
+
+#### Config File
+The mina metrics sidecar will also look at `/etc/mina-sidecar.json` for its configuration variables, and the file should look like this:
+
+```
+{
+  "uploadURL": "https://your.upload.url.here?token=someToken",
+  "nodeURL": "https://your.mina.node.here:4321"
+}
+```
+
+The `uploadURL` parameter should be given to you by the Mina engineers
+
+## Running with Docker
+Running in docker should be as straight forward as anything else. The examples below assume you've checked out this repo and run `docker build -t mina-sidecar .` in this folder.
+
+We will likely also be cutting a release to docker hub soon which will likely live at `codaprotocol/mina-sidecar` (subject to change).
+
+#### Running with envars
+```bash
+$ docker run --rm -it -e MINA_BP_UPLOAD_URL=https://some-url-here -e MINA_NODE_URL=https://localhost:4321 mina-sidecar
+```
+
+#### Running with a config file
+```bash
+$ docker run --rm -it -v $(pwd)/mina-sidecar.json:/etc/mina-sidecar.json mina-sidecar
+```
+#### You can even bake your own docker image with the config file already in it
+```bash
+# Custom Docker Image
+$ echo '{"uploadURL": "https://some-url-here", "nodeURL": "https://localhost:4321"}' > your_custom_config.conf
+$ cat <<EOF > Dockerfile.custom
+FROM codaprotocol/mina-sidecar
+COPY your_custom_config.conf /etc/mina-sidecar.json
+EOF
+$ docker build -t your-custom-sidecar .
+$ docker run --rm -it your-custom-sidecar
+```
