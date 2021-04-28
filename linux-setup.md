@@ -347,3 +347,49 @@ EOF
 $ docker build -t your-custom-sidecar .
 $ docker run --rm -it your-custom-sidecar
 ```
+
+
+# Running a 2nd docker container & sidecar
+
+Do all this in a new folder, and run commands from that folder.
+
+`mkdir docker-mina`
+
+`cp -R keys/ docker-mina/`
+
+`cd docker-mina`
+
+`chmod...` (copy permissions of keys from internet guide)
+
+We run everything on a different set of ports (incrementing the first digit by one from the defaults). Note, you'll need to do `sudo ufw allow 9302` to open that port to the outside world.
+
+`docker network create mina-network`
+
+`docker run --name mina -d -p 9302:9302 -p 4085:4085 -p 4095:4095 --network mina-network --restart=always --mount "type=bind,source=`pwd`/keys,dst=/keys,readonly" --mount "type=bind,source=`pwd`/.mina-config,dst=/root/.mina-config" -e CODA_PRIVKEY_PASS="YOUR_PASSWORD_HERE" minaprotocol/mina-daemon-baked:1.1.5-a42bdee daemon --block-producer-key /keys/my-wallet --insecure-rest-server --file-log-level Info --log-level Info --peer-list-url https://storage.googleapis.com/mina-seed-lists/mainnet_seeds.txt --coinbase-receiver B62qpA8s9wbazMmXGFENyR952kKgCofTGG6QX584Je55A5QrpqPaahW --open-limited-graphql-port --limited-graphql-port 4095 --external-port 9302 --rest-port 4085`
+
+`docker pull minaprotocol/mina-bp-stats-sidecar:latest`
+
+`nano mina-sidecar-config.json`
+
+```
+{
+  "uploadURL": "https://us-central1-mina-mainnet-303900.cloudfunctions.net/block-producer-stats-ingest/?token=72941420a9595e1f4006e2f3565881b5",
+  "nodeURL": "http://mina:4095"
+}
+```
+(Note the port number is incremented here to match the new mina container)
+
+`docker network create mina-network`
+
+```
+docker run \
+--name mina-sidecar \
+--network mina-network \
+--restart=always -d \
+-v $(pwd)/mina-sidecar-config.json:/etc/mina-sidecar.json \
+minaprotocol/mina-bp-stats-sidecar:latest
+```
+
+`docker logs -f mina`
+or
+`docker logs -f mina-sidecar`
